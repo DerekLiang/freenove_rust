@@ -7,30 +7,21 @@ use rppal::gpio::Level;
 use rppal::gpio::Trigger;
 use rppal::system::DeviceInfo;
 
-const GPIO_LED: u8 = 17; // GPIO17
-const GPIO_SWITCH: u8 = 18; // GPIO18
+const GPIO_LEDS: [u8;10] = [17, 18, 27, 22, 23, 24, 25, 2, 3, 8];   
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Blinking an LED on a {}.", DeviceInfo::new()?.model());
 
-    let mut led_pin = Gpio::new()?.get(GPIO_LED)?.into_output();
-    let mut switch_pin = Gpio::new()?.get(GPIO_SWITCH)?.into_input_pullup();
-    switch_pin.set_interrupt(Trigger::Both)?;
-
-    while true {        
-        let switch = switch_pin.poll_interrupt(false, None)?;
-        match switch {
-            Some(level) => {
-                if level == Level::High {
-                    led_pin.set_high();
-                } else {
-                    led_pin.set_low();
-                }
-            }
-            None => {}
+    
+    while true {      
+        for &led in GPIO_LEDS.iter() {
+            
+            let mut led_pin = Gpio::new()?.get(led)?.into_output();
+            led_pin.set_low();
+            thread::sleep(Duration::from_millis(100));
+            led_pin.set_high();
+            thread::sleep(Duration::from_millis(100));
         }
-
-        thread::sleep(Duration::from_millis(100));
     }
 
     Ok(())
