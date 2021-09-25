@@ -3,23 +3,35 @@ use std::thread;
 use std::time::Duration;
 
 use rppal::gpio::Gpio;
+use rppal::gpio::Level;
+use rppal::gpio::Trigger;
 use rppal::system::DeviceInfo;
 
-// Gpio uses BCM pin numbering. BCM GPIO 23 is tied to physical pin 16.
-const GPIO_LED: u8 = 17;
+const GPIO_LED: u8 = 17; // GPIO17
+const GPIO_SWITCH: u8 = 18; // GPIO18
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Blinking an LED on a {}.", DeviceInfo::new()?.model());
 
-    let mut pin = Gpio::new()?.get(GPIO_LED)?.into_output();
+    let mut led_pin = Gpio::new()?.get(GPIO_LED)?.into_output();
+    let mut switch_pin = Gpio::new()?.get(GPIO_SWITCH)?.into_input_pullup();
+    switch_pin.set_interrupt(Trigger::Both)?;
 
-    // Blink the LED by setting the pin's logic level high for 500 ms.
-    while (true) {
-        pin.set_high();
-        thread::sleep(Duration::from_millis(1000));
-        pin.set_low();
-        thread::sleep(Duration::from_millis(1000));
+    while true {        
+        let switch = switch_pin.poll_interrupt(false, None)?;
+        match switch {
+            Some(level) => {
+                if level == Level::High {
+                    led_pin.set_high();
+                } else {
+                    led_pin.set_low();
+                }
+            }
+            None => {}
+        }
+
+        thread::sleep(Duration::from_millis(100));
     }
-        
+
     Ok(())
 }
