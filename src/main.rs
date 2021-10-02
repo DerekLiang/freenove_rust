@@ -45,8 +45,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut leds = vec![
         Gpio::new()?.get(17)?.into_output(),
-        Gpio::new()?.get(27)?.into_output(),
-        Gpio::new()?.get(22)?.into_output(),
     ];
 
     while true {
