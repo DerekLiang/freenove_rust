@@ -22,6 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut i2c = I2c::new()?;
     i2c.set_slave_address(i2cAddress)?;
 
+    let mut led = Gpio::new()?.get(17)?.into_output();
+
     // representing different ports, from a0-a7
     let commands = [0x84, 0xc4, 0x94, 0xd4, 0xa4, 0xe4, 0xb4, 0xf4];
     let mut reg = [0u8; 1];
@@ -31,7 +33,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let adc_value = i2c.block_read(commands[0], &mut reg)?;
         println!("ADC value : {}, Voltage: {:2}", reg[0],  reg[0] as f32 / 255.0 * 3.3);
         
-        thread::sleep(Duration::from_secs(1)); 
+        led.set_pwm(
+            Duration::from_millis(20),
+            Duration::from_micros(20000 * reg[0] as u64 / 255 ), // wthin 20 ms we take a percentage as the power level.
+        )?;
+
+        thread::sleep(Duration::from_millis(10)); 
     }
 
     Ok(())
