@@ -17,42 +17,25 @@ use rppal::system::DeviceInfo;
 // > i2cdetect -y 1
 const i2cAddress: u16 = 0x4b;
 
-fn read_and_set(i2c: &I2c, index: usize, led: &mut OutputPin) -> Result<(), Box<dyn Error>> {
-    // a0-a7 adc port
-    let commands = [0x84, 0xc4, 0x94, 0xd4, 0xa4, 0xe4, 0xb4, 0xf4];
-
-    let mut reg = [0u8; 1];
-    i2c.block_read(commands[index], &mut reg)?;
-
-    println!(
-        "ADC{} value : {}, Voltage: {:2}",
-        index,
-        reg[0],
-        reg[0] as f32 / 255.0 * 3.3
-    );
-
-    led.set_pwm(
-        Duration::from_millis(20),
-        Duration::from_micros(20000 * reg[0] as u64 / 255), // wthin 20 ms we take a percentage as the power level.
-    )?;
-
-    Ok(())
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut i2c = I2c::new()?;
     i2c.set_slave_address(i2cAddress)?;
 
-    let mut leds = vec![
-        Gpio::new()?.get(17)?.into_output(),
-    ];
-
     while true {
-        for index in 0..leds.len() {
-            read_and_set(&i2c, index, &mut leds[index])?;
-        }
+        let commands = [0x84, 0xc4, 0x94, 0xd4, 0xa4, 0xe4, 0xb4, 0xf4];
 
-        thread::sleep(Duration::from_millis(10));
+        let mut reg = [0u8; 1];
+        i2c.block_read(commands[0], &mut reg)?;
+    
+        let voltage = reg[0] as f32 / 255.0 * 3.3;
+        let rt = 10.0 * voltage / (3.3 -voltage);
+        let temp_k = 1.0/(1.0/(273.15+25.0) + (rt/10.0).ln()/3950.0);
+        let temp_c = temp_k - 273.15;
+
+        println!("ADC value : {} ,\tVoltage : {:.2}V, \tTemperature : {:.2}C\n", reg[0] ,voltage, temp_c);
+
+        thread::sleep(Duration::from_secs(1));
     }
 
     Ok(())
