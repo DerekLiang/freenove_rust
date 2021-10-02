@@ -17,23 +17,35 @@ use rppal::system::DeviceInfo;
 // > i2cdetect -y 1
 const i2cAddress: u16 = 0x4b;
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     let mut i2c = I2c::new()?;
     i2c.set_slave_address(i2cAddress)?;
+    let mut switch_pin = Gpio::new()?.get(18)?.into_input_pullup();
+
+    // NOTE: poll_interrupt is not working reliably, using async instead
+    let switch_level = Arc::new(Mutex::<Option<Level>>::new(None));
+    let switch_level_data = switch_level.clone();
+
+    switch_pin.set_async_interrupt(Trigger::Both, move |l| {
+        let mut thread_switch_level = switch_level_data.lock().unwrap();
+        *thread_switch_level = Some(l);
+    })?;
 
     while true {
         let commands = [0x84, 0xc4, 0x94, 0xd4, 0xa4, 0xe4, 0xb4, 0xf4];
 
-        let mut reg = [0u8; 1];
-        i2c.block_read(commands[0], &mut reg)?;
-    
-        let voltage = reg[0] as f32 / 255.0 * 3.3;
-        let rt = 10.0 * voltage / (3.3 -voltage);
-        let temp_k = 1.0/(1.0/(273.15+25.0) + (rt/10.0).ln()/3950.0);
-        let temp_c = temp_k - 273.15;
+        let mut reg_y = [0u8; 1];
+        i2c.block_read(commands[0], &mut reg_y)?;
 
-        println!("ADC value : {} ,\tVoltage : {:.2}V, \tTemperature : {:.2}C\n", reg[0] ,voltage, temp_c);
+        let mut reg_x = [0u8; 1];
+        i2c.block_read(commands[1], &mut reg_x)?;
+
+        let val_z = *switch_level.lock().unwrap();
+
+        println!(
+            "val_X: {} ,\tval_Y: {} ,\tval_Z: {:?}",
+            reg_x[0], reg_y[0], val_z
+        );
 
         thread::sleep(Duration::from_secs(1));
     }
