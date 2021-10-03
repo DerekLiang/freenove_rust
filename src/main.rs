@@ -13,75 +13,46 @@ use rppal::gpio::Trigger;
 use rppal::pwm::{Channel, Polarity, Pwm};
 use rppal::system::DeviceInfo;
 
-// run the following command and find the address
-// > i2cdetect -y 1
-const i2cAddress: u16 = 0x4b;
-
-fn map(value: i16, from_low: i16, from_high: i16, to_low: i16, to_high: i16) -> i16 {
-    (to_high - to_low) * (value - from_low) / (from_high - from_low) + to_low
-}
-
-fn motor(
-    adc: u8,
-    pin1: &mut OutputPin,
-    pin2: &mut OutputPin,
-    enable_pin: &mut OutputPin,
-) -> Result<(), Box<dyn Error>> {
-    let value = adc as i16 - 128;
-    match value {
-        v if v > 0 => {
-            pin1.set_high();
-            pin2.set_low();
-            println!("turn forward....");
-        }
-        v if v < 0 => {
-            pin1.set_low();
-            pin2.set_high();
-            println!("turn backward....");
-        }
-        _ => {
-            pin1.set_low();
-            pin2.set_low();
-            println!("Motor Stop...");
-        }
-    }
-
-    let duty_cycle = map(value.abs(), 0, 128, 0, 100) as u64;
-    println!("The PWM duty cycle is {}%", duty_cycle);
-
-    enable_pin.set_pwm(
-        Duration::from_millis(20),
-        Duration::from_micros(2000 * duty_cycle / 100),
-    )?;
-
-    Ok(())
-}
+// Servo configuration. Change these values based on your servo's verified safe
+// minimum and maximum values.
+//
+// Period: 20 ms (50 Hz). Pulse width: min. 500 µs, neutral 1500 µs, max. 2500 µs.
+// for micro servo 9g sg90
+const PERIOD_MS: u64 = 20;
+const PULSE_MIN_US: u64 = 500;
+const PULSE_NEUTRAL_US: u64 = 1500;
+const PULSE_MAX_US: u64 = 2500;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut i2c = I2c::new()?;
-    i2c.set_slave_address(i2cAddress)?;
 
-    let mut replay_pin = Gpio::new()?.get(17)?.into_output(); // 0
-    let mut button_pin = Gpio::new()?.get(18)?.into_input();  // 1
+    // you might need to reboot, if the following code is not working.
+    let pwm = Pwm::with_period(
+        Channel::Pwm0,
+        Duration::from_millis(PERIOD_MS),
+        Duration::from_micros(PULSE_MAX_US),
+        Polarity::Normal,
+        true,
+    )?;
 
-    button_pin.set_interrupt(Trigger::Both)?;
-    loop {
-        let switch = button_pin.poll_interrupt(true, None)?;
+    println!("moving to max position");
+    pwm.set_pulse_width(Duration::from_micros(PULSE_MAX_US))?;
+    // Sleep for 500 ms while the servo moves into position.
+    thread::sleep(Duration::from_millis(500));
+    
+    println!("moving to min position");
+    // Rotate the servo to the opposite side.
+    pwm.set_pulse_width(Duration::from_micros(PULSE_MIN_US))?;
 
-        match switch {
-            Some(level) => {
-                if level == Level::High {
-                    replay_pin.set_high();
-                    println!("set relay pin to high");
-                } else {
-                    replay_pin.set_low();
-                    println!("set relay pin to low");
-                }
-            }
-            None => {}
-        }
+    thread::sleep(Duration::from_millis(500));
 
-        thread::sleep(Duration::from_millis(100));
+    println!("moving from min to middle");
+    // Rotate the servo to its neutral (center) position in small steps.
+    for pulse in (PULSE_MIN_US..=PULSE_NEUTRAL_US).step_by(10) {
+        pwm.set_pulse_width(Duration::from_micros(pulse))?;
+        thread::sleep(Duration::from_millis(20));
     }
+
+    Ok(())
+
 
 }
