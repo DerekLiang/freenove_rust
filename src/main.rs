@@ -61,20 +61,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut i2c = I2c::new()?;
     i2c.set_slave_address(i2cAddress)?;
 
-    let mut motor_pin1 = Gpio::new()?.get(27)?.into_output(); // 2
-    let mut motor_pin2 = Gpio::new()?.get(17)?.into_output(); // 0
-    let mut enable_pin = Gpio::new()?.get(22)?.into_output(); // 3
+    let mut replay_pin = Gpio::new()?.get(17)?.into_output(); // 0
+    let mut button_pin = Gpio::new()?.get(18)?.into_input();  // 1
 
+    button_pin.set_interrupt(Trigger::Both)?;
     loop {
-        let commands = [0x84, 0xc4, 0x94, 0xd4, 0xa4, 0xe4, 0xb4, 0xf4];
+        let switch = button_pin.poll_interrupt(true, None)?;
 
-        let mut adc = [0u8; 1];
-        i2c.block_read(commands[0], &mut adc)?;
+        match switch {
+            Some(level) => {
+                if level == Level::High {
+                    replay_pin.set_high();
+                    println!("set relay pin to high");
+                } else {
+                    replay_pin.set_low();
+                    println!("set relay pin to low");
+                }
+            }
+            None => {}
+        }
 
-        println!("ADC value : {}", adc[0]);
-
-        motor(adc[0], &mut motor_pin1, &mut motor_pin2, &mut enable_pin)?;
-        thread::sleep(Duration::from_millis(1000));
+        thread::sleep(Duration::from_millis(100));
     }
 
 }
