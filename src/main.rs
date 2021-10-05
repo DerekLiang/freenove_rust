@@ -13,72 +13,44 @@ use rppal::gpio::Trigger;
 use rppal::pwm::{Channel, Polarity, Pwm};
 use rppal::system::DeviceInfo;
 
-struct StepMoter {
-    step: u8,
-    pins: Vec<OutputPin>,
-    min_delay_ms: u8, // min delay before each steps
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum MoterDirection {
-    Forward,
-    Backward,
-}
-
-impl StepMoter {
-    pub fn new(pins: Vec<u8>, step: u8, min_delay_ms: u8) -> Result<Self, Box<dyn Error>> {
-        let pins = Self::get_pins(pins)?;
-        Ok(Self {
-            step,
-            pins,
-            min_delay_ms,
-        })
-    }
-
-    fn get_pins(pins: Vec<u8>) -> Result<Vec<OutputPin>, Box<dyn Error>> {
-        let mut result = vec![];
-        for pin in pins {
-            result.push(Gpio::new()?.get(pin)?.into_output());
+// Q0-Q7 q_bit representing 0-7 bit
+fn shift_out(data_pin: &mut OutputPin, clock_pin: &mut OutputPin, q_bit: u8) {
+    (0..8).into_iter().rev().for_each(|i| {
+        clock_pin.set_low();
+        if i == q_bit {
+            data_pin.set_high();
+        } else {
+            data_pin.set_low();
         }
-        Ok(result)
-    }
+        thread::sleep(Duration::from_millis(10));
+        clock_pin.set_high();
+        thread::sleep(Duration::from_millis(10));
+    })
+}
 
-    fn move_one_period(&mut self, direction: MoterDirection) {
-        let min_delay_ms = self.min_delay_ms.max(3) as u64;
-        let step = self.step;
-
-        (0..self.step)
-            .into_iter()
-            .map(|cycle| match direction {
-                MoterDirection::Forward => cycle as usize,
-                MoterDirection::Backward => (step - cycle - 1) as usize,
-            })
-            .for_each(|cycle| {
-                self.pins.iter_mut().enumerate().for_each(|(index, pin)| {
-                    if index == cycle {
-                        pin.set_high();
-                    } else {
-                        pin.set_low();
-                    }
-                });
-                thread::sleep(Duration::from_millis(min_delay_ms));
-            });
-    }
-
-    pub fn move_steps(&mut self, steps: u32, direction: MoterDirection) {
-        (0..steps)
-            .into_iter()
-            .for_each(|_| self.move_one_period(direction))
-    }
+fn set_led(latch_pin: &mut OutputPin, data_pin: &mut OutputPin, clock_pin: &mut OutputPin, x: u8) {
+    latch_pin.set_low();
+    shift_out(data_pin, clock_pin, x);
+    latch_pin.set_high();
+    println!("{}",x);
+    thread::sleep(Duration::from_millis(2000));
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut step_moter = StepMoter::new(vec![18, 23, 24, 25], 4, 3)?;
+    let mut data_pin = Gpio::new()?.get(17)?.into_output();
+    let mut latch_pin = Gpio::new()?.get(27)?.into_output();
+    let mut clock_pin = Gpio::new()?.get(22)?.into_output();
+    
     loop {
-        step_moter.move_steps(512, MoterDirection::Forward);
-        thread::sleep(Duration::from_millis(500));
+        (0..8).into_iter().for_each(|x| {
+            set_led(&mut latch_pin,&mut data_pin,&mut clock_pin, x);
+        });
+        thread::sleep(Duration::from_millis(100));
 
-        step_moter.move_steps(512, MoterDirection::Backward);
-        thread::sleep(Duration::from_millis(500));
+        (0..8).into_iter().rev().for_each(|x| {
+            set_led(&mut latch_pin,&mut data_pin,&mut clock_pin, x);
+        });
+
+        thread::sleep(Duration::from_millis(100));
     }
 }
