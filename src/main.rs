@@ -13,46 +13,72 @@ use rppal::gpio::Trigger;
 use rppal::pwm::{Channel, Polarity, Pwm};
 use rppal::system::DeviceInfo;
 
-// Servo configuration. Change these values based on your servo's verified safe
-// minimum and maximum values.
-//
-// Period: 20 ms (50 Hz). Pulse width: min. 500 µs, neutral 1500 µs, max. 2500 µs.
-// for micro servo 9g sg90
-const PERIOD_MS: u64 = 20;
-const PULSE_MIN_US: u64 = 500;
-const PULSE_NEUTRAL_US: u64 = 1500;
-const PULSE_MAX_US: u64 = 2500;
+struct StepMoter {
+    step: u8,
+    pins: Vec<OutputPin>,
+    min_delay_ms: u8, // min delay before each steps
+}
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[derive(Clone, Copy, PartialEq)]
+enum MoterDirection {
+    Forward,
+    Backward,
+}
 
-    // you might need to reboot, if the following code is not working.
-    let pwm = Pwm::with_period(
-        Channel::Pwm0,
-        Duration::from_millis(PERIOD_MS),
-        Duration::from_micros(PULSE_MAX_US),
-        Polarity::Normal,
-        true,
-    )?;
-
-    println!("moving to max position");
-    pwm.set_pulse_width(Duration::from_micros(PULSE_MAX_US))?;
-    // Sleep for 500 ms while the servo moves into position.
-    thread::sleep(Duration::from_millis(500));
-    
-    println!("moving to min position");
-    // Rotate the servo to the opposite side.
-    pwm.set_pulse_width(Duration::from_micros(PULSE_MIN_US))?;
-
-    thread::sleep(Duration::from_millis(500));
-
-    println!("moving from min to middle");
-    // Rotate the servo to its neutral (center) position in small steps.
-    for pulse in (PULSE_MIN_US..=PULSE_NEUTRAL_US).step_by(10) {
-        pwm.set_pulse_width(Duration::from_micros(pulse))?;
-        thread::sleep(Duration::from_millis(20));
+impl StepMoter {
+    pub fn new(pins: Vec<u8>, step: u8, min_delay_ms: u8) -> Result<Self, Box<dyn Error>> {
+        let pins = Self::get_pins(pins)?;
+        Ok(Self {
+            step,
+            pins,
+            min_delay_ms,
+        })
     }
 
-    Ok(())
+    fn get_pins(pins: Vec<u8>) -> Result<Vec<OutputPin>, Box<dyn Error>> {
+        let mut result = vec![];
+        for pin in pins {
+            result.push(Gpio::new()?.get(pin)?.into_output());
+        }
+        Ok(result)
+    }
 
+    fn move_one_period(&mut self, direction: MoterDirection) {
+        let min_delay_ms = self.min_delay_ms.max(3) as u64;
+        let step = self.step;
 
+        (0..self.step)
+            .into_iter()
+            .map(|cycle| match direction {
+                MoterDirection::Forward => cycle as usize,
+                MoterDirection::Backward => (step - cycle - 1) as usize,
+            })
+            .for_each(|cycle| {
+                self.pins.iter_mut().enumerate().for_each(|(index, pin)| {
+                    if index == cycle {
+                        pin.set_high();
+                    } else {
+                        pin.set_low();
+                    }
+                });
+                thread::sleep(Duration::from_millis(min_delay_ms));
+            });
+    }
+
+    pub fn move_steps(&mut self, steps: u32, direction: MoterDirection) {
+        (0..steps)
+            .into_iter()
+            .for_each(|_| self.move_one_period(direction))
+    }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut step_moter = StepMoter::new(vec![18, 23, 24, 25], 4, 3)?;
+    loop {
+        step_moter.move_steps(512, MoterDirection::Forward);
+        thread::sleep(Duration::from_millis(500));
+
+        step_moter.move_steps(512, MoterDirection::Backward);
+        thread::sleep(Duration::from_millis(500));
+    }
 }
