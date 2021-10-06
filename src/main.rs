@@ -35,12 +35,22 @@ fn shift_out(data_pin: &mut OutputPin, clock_pin: &mut OutputPin, q_bits: u8) {
         thread::sleep(Duration::from_millis(10));
     })
 }
+/// display x as single digits
+fn set_led(
+    latch_pin: &mut OutputPin,
+    data_pin: &mut OutputPin,
+    clock_pin: &mut OutputPin,
+    x: usize,
+) {
+    let numbers = vec![
+        0xc0, 0xf9, 0xa4, 0xb0, 0x99, 0x92, 0x82, 0xf8, 0x80, 0x90, 0x88, 0x83, 0xc6, 0xa1, 0x86,
+        0x8e,
+    ];
 
-fn set_led(latch_pin: &mut OutputPin, data_pin: &mut OutputPin, clock_pin: &mut OutputPin, x: u8) {
     latch_pin.set_low();
-    shift_out(data_pin, clock_pin, x);
+    shift_out(data_pin, clock_pin, numbers[x]);
     latch_pin.set_high();
-    println!("{}",x);
+    println!("{}", x);
     thread::sleep(Duration::from_millis(200));
 }
 
@@ -48,17 +58,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut data_pin = Gpio::new()?.get(17)?.into_output();
     let mut latch_pin = Gpio::new()?.get(27)?.into_output();
     let mut clock_pin = Gpio::new()?.get(22)?.into_output();
-    
+
     loop {
-        (0..8).into_iter().for_each(|x| {
-            set_led(&mut latch_pin,&mut data_pin,&mut clock_pin, 1 << x);
+        (0..10).into_iter().for_each(|x| {
+            set_led(&mut latch_pin, &mut data_pin, &mut clock_pin, x);
         });
-        thread::sleep(Duration::from_millis(100));
-
-        (0..8).into_iter().rev().for_each(|x| {
-            set_led(&mut latch_pin,&mut data_pin,&mut clock_pin, 0x80 >> (7-x));
-        });
-
         thread::sleep(Duration::from_millis(100));
     }
 }
