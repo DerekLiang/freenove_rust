@@ -136,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // d,
                 *counter.lock().unwrap(),
             );
-            // thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(1));
         });
         break;
     }
