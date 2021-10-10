@@ -1,57 +1,126 @@
-use core::f32::consts::PI;
-use rand::Rng;
-use rppal::gpio::OutputPin;
-use rppal::i2c::I2c;
-use std::error::Error;
-use std::slice::Iter;
-use std::sync::{Arc, Mutex};
+
+
+extern crate rppal;
+use embedded_hal::digital::v2::{InputPin, OutputPin};
+use rppal::gpio::{Gpio, Mode, PullUpDown};
+extern crate hal_sensor_dht;
+use hal_sensor_dht::{DHTSensor, SensorType};
+
+struct MyPin(rppal::gpio::IoPin);
+
+impl MyPin {
+    pub fn new(pin: rppal::gpio::Pin) -> MyPin {
+        MyPin(pin.into_io(Mode::Input))
+    }
+}
+
+impl InputPin for MyPin {
+    type Error = <rppal::gpio::IoPin as InputPin>::Error;
+    fn is_high(&self) -> Result<bool, <rppal::gpio::IoPin as InputPin>::Error> {
+        Ok(self.0.is_high())
+    }
+    fn is_low(&self) -> Result<bool, <rppal::gpio::IoPin as InputPin>::Error> {
+        Ok(self.0.is_low())
+    }
+}
+
+impl OutputPin for MyPin {
+    type Error = <rppal::gpio::IoPin as OutputPin>::Error;
+    fn set_high(&mut self) -> Result<(), <rppal::gpio::IoPin as OutputPin>::Error> {
+        Ok(self.0.set_high())
+    }
+    fn set_low(&mut self) -> Result<(), <rppal::gpio::IoPin as OutputPin>::Error> {
+        Ok(self.0.set_low())
+    }
+}
+
+impl hal_sensor_dht::IoPin for MyPin {
+    fn set_input_pullup_mode(&mut self) {
+        self.0.set_mode(Mode::Input);
+        self.0.set_pullupdown(PullUpDown::PullUp);
+    }
+    fn set_output_mode(&mut self) {
+        self.0.set_mode(Mode::Output);
+    }
+}
+
+use embedded_hal::blocking::delay::{DelayMs, DelayUs};
+use std::ptr::read_volatile;
+use std::ptr::write_volatile;
 use std::thread;
 use std::time::Duration;
 
-use rppal::gpio::Gpio;
-use rppal::gpio::Level;
-use rppal::gpio::Trigger;
-use rppal::pwm::{Channel, Polarity, Pwm};
-use rppal::system::DeviceInfo;
+struct MyTimer {}
 
-use chrono::Local;
-use lcd_pcf8574::Pcf8574;
-use std::fs;
-
-fn get_cpu_tempture() -> Result<String, Box<dyn std::error::Error>> {
-    let contents = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")?;
-    let cpu_tmp = u16::from_str_radix(&contents.trim_end(), 10)?;
-
-    Ok(format!("CPU Temp:{:.2}F ", cpu_tmp as f32 / 1000.0))
+impl DelayUs<u16> for MyTimer {
+    fn delay_us(&mut self, t: u16) {
+        let mut i = 0;
+        unsafe {
+            while read_volatile(&mut i) < t {
+                write_volatile(&mut i, read_volatile(&mut i) + 1);
+            }
+        }
+    }
 }
 
-fn get_date_time() -> String {
-    let now = Local::now();
-
-    format!("{}", now.format("%H:%M:%S"))
+impl DelayMs<u16> for MyTimer {
+    fn delay_ms(&mut self, ms: u16) {
+        thread::sleep(Duration::from_millis(ms.into()));
+    }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let bus = 1;
-    let addr = 0x27;
-    let mut display = lcd::Display::new(Pcf8574::new(bus, addr)?);
-    display.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
-    display.display(
-        lcd::DisplayMode::DisplayOn,
-        lcd::DisplayCursor::CursorOff,
-        lcd::DisplayBlink::BlinkOff,
-    );
+extern crate libc;
+use libc::sched_param;
+use libc::sched_setscheduler;
+use libc::SCHED_FIFO;
+use libc::SCHED_OTHER;
 
-    display.clear();
-    display.home();
+struct MyInterruptCtrl {}
+
+impl hal_sensor_dht::InterruptCtrl for MyInterruptCtrl {
+    fn enable(&mut self) {
+        unsafe {
+            let param = sched_param { sched_priority: 32 };
+            let result = sched_setscheduler(0, SCHED_FIFO, &param);
+
+            if result != 0 {
+                panic!("Error setting priority, you may not have cap_sys_nice capability");
+            }
+        }
+    }
+    fn disable(&mut self) {
+        unsafe {
+            let param = sched_param { sched_priority: 0 };
+            let result = sched_setscheduler(0, SCHED_OTHER, &param);
+
+            if result != 0 {
+                panic!("Error setting priority, you may not have cap_sys_nice capability");
+            }
+        }
+    }
+}
+use std::error::Error;
+
+// to run it, under super user;
+// cargo build && sudo target/debug/rust_test
+fn main() -> Result<(), Box<dyn Error>> {
+    let pin_number = 17;
+
+    let pin = Gpio::new()?.get(pin_number)?;
+    let my_pin = MyPin::new(pin);
+    let my_timer = MyTimer {};
+    let my_interrupt = MyInterruptCtrl {};
+    let mut sensor = DHTSensor::new(SensorType::DHT11, my_pin, my_timer, my_interrupt);
 
     loop {
-        display.position(0, 0);
-        display.print(get_cpu_tempture()?.as_str());
-        display.position(0, 1);
-        display.print(get_date_time().as_str());
-        thread::sleep(Duration::from_secs(1));
+        if let Ok(r) = sensor.read() {
+            println!(
+                "Temperature = {} / {} and humidity = {}",
+                r.temperature_celsius(),
+                r.temperature_fahrenheit(),
+                r.humidity_percent()
+            );
+        }
+        thread::sleep(Duration::from_secs(10));
     }
-
-    // Ok(())
 }

@@ -6,8 +6,23 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rppal = "0.12.0"
+libc = "0.2"
+#rppal = "0.12.0"
 rand = "0.8.4"
 lcd-pcf8574 = { git = "https://github.com/wfraser/lcd-pcf8574", branch = "master" }
 lcd = { git = "https://github.com/wfraser/lcd", rev = "b62212d7441f916a9fcef7dad01279a30dcff6f8" }
 chrono = "0.4.19"
+#hal_sensor_dht = { version = "0.1.0", features=["floats"] }
+
+
+[dependencies.hal_sensor_dht] 
+version = "0.1.0"
+features = ["floats"]
+
+[dependencies.embedded-hal] 
+version = "0.2.4"
+features = ["unproven"]
+
+[dependencies.rppal]
+version = "0.12.0"
+features = ["hal", "hal-unproven"]
