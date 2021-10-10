@@ -8,3 +8,6 @@ edition = "2018"
 [dependencies]
 rppal = "0.12.0"
 rand = "0.8.4"
+lcd-pcf8574 = { git = "https://github.com/wfraser/lcd-pcf8574", branch = "master" }
+lcd = { git = "https://github.com/wfraser/lcd", rev = "b62212d7441f916a9fcef7dad01279a30dcff6f8" }
+chrono = "0.4.19"
