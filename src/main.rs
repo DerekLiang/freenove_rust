@@ -24,8 +24,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut trigger_pin = Gpio::new()?.get(23)?.into_output();
     let mut echo_pin = Gpio::new()?.get(24)?.into_input_pulldown();
 
-    let MAX_DISTANCE = 2;   // 2 meter
-    let timeout_in_micro_second = MAX_DISTANCE * 2 *1000_000/340 ; // t=S*2/V
+    let MAX_DISTANCE = 2; // 2 meter
+    let timeout_in_micro_second = MAX_DISTANCE * 2 * 1000_000 / 340; // t=S*2/V
 
     loop {
         // start the plus
@@ -36,22 +36,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         // wait for rising edge
         echo_pin.set_interrupt(Trigger::RisingEdge)?;
         match echo_pin.poll_interrupt(true, Some(Duration::from_micros(timeout_in_micro_second))) {
-            Err(_) => {
-                println!("timeout on waiting for rising edge");
+            Err(_) | Ok(None) => {
+                // println!("timeout on waiting for rising edge");
                 continue;
             }
             Ok(_) => {}
         };
         let start_time = Instant::now();
-        
+
         // wait for falling edge
         echo_pin.set_interrupt(Trigger::FallingEdge)?;
         match echo_pin.poll_interrupt(true, Some(Duration::from_micros(timeout_in_micro_second))) {
-            Err(_) => {
-                println!("timeout on waiting for falling edge");
+            Err(_) | Ok(None) => {
+                // println!("timeout on waiting for falling edge");
                 continue;
             }
-            Ok(_) => {}
+            _ => {}
         }
         let end_time = Instant::now();
 
@@ -60,11 +60,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         //calculate distance with sound speed 340m/s
         let distance = ping_time.as_micros() as f32 * 340.0 / 2.0 / 1000_000.0;
 
-        if distance > MAX_DISTANCE as f32 * 95.0 / 100.0 {  // if close to 95% of the range, consider out of range
-            println!("out of range detected!");
-        } else {
-            println!("distance is: {:.3} meter, {}micro-second", distance, ping_time.as_micros());
-        }
+        println!(
+            "distance is: {:.3} meter, {}micro-second",
+            distance,
+            ping_time.as_micros()
+        );
         thread::sleep(Duration::from_secs(1));
     }
 }
